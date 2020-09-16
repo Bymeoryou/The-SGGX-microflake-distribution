@@ -194,7 +194,22 @@ public:
         const Vector3f& wo, Mask active)  const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::PhaseFunctionEvaluate, active);
 
-        if(mi.)
+        Vector omega3 = mi.t;
+        Float Sxx, Sxy, Sxz, Syy, Syz, Szz;
+        calc_matrix(Sxx, Syy, Szz, Sxy, Sxz, Syz);
+
+        Vector wi = mi.to_local(mi.wi);
+        wo = mi.to_local(wo);
+        Float ret = eval_specular(wi, wo, Sxxx, Syy, Szz, Sxy, Sxz, Syz);
+
+        return ret;
+    }
+
+    std::pair<Vector3f, Float> sample(const PhaseFunctionContext& ctx,
+        const MediumInteraction3f& mi, const Point2f& sample, Mask active = true) const override {
+        MTS_MASKED_FUNCTION(ProfilerPhase::PhaseFunctionSample, active);
+
+
     }
 
 private:
