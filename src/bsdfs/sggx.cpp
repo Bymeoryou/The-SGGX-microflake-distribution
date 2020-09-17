@@ -1,27 +1,26 @@
+#include <mitsuba/core/frame.h>
 #include <mitsuba/core/properties.h>
 #include <mitsuba/core/spectrum.h>
-#include <mitsuba/core/frame.h>
 #include <mitsuba/core/warp.h>
 
-#include <mitsuba/render/texture.h>
-#include <mitsuba/render/phase.h>
+#include <mitsuba/render/bsdf.h>
 #include <mitsuba/render/medium.h>
+#include <mitsuba/render/phase.h>
 #include <mitsuba/render/sampler.h>
-
+#include <mitsuba/render/texture.h>
 
 NAMESPACE_BEGIN(mitsuba)
 
-
 template <typename Float, typename Spectrum>
-class SymmetricGGXSpecular final : public PhaseFunction<Float, Spectrum> {
+class SymmetricGGXSpecular final : public BSDF<Float, Spectrum> {
 public:
-    MTS_IMPORT_BASE(PhaseFunction, m_flags, m_components)
+    MTS_IMPORT_BASE(BSDF, m_flags, m_components)
     MTS_IMPORT_TYPES(Texture)
-    
+
     SymmetricGGXSpecular(const Properties &props) : Base(props) {
-        m_roughness = props.texture<Texture>("roughness", 0.5f);
+        m_roughness   = props.texture<Texture>("roughness", 0.5f);
         m_anisotropic = props.texture<Texture>("anisotropic", 0.6f);
-        m_flags = PhaseFunctionFlags::Anisotropic;
+        m_flags       = BSDFFlags::Anisotropic | BSDFFlags::FrontSide;
         m_components.push_back(m_flags);
     }
 
@@ -62,16 +61,15 @@ public:
         return D;
     }
 
-    void buildOrthonormalBasis(Vector &omega_1, Vector &omega_2,
-                               const Vector &omega_3) {
-        if (omega_3.z < -0.9999999f) {
-            omega_1 = Vector(0.0f, -1.0f, 0.0f);
-            omega_2 = Vector(-1.0f, 0.0f, 0.0f);
+    void buildOrthonormalBasis(Vector &wk, Vector &wj, const Vector &wi) {
+        if (wi.z < -0.9999999f) {
+            wk = Vector(0.0f, -1.0f, 0.0f);
+            wj = Vector(-1.0f, 0.0f, 0.0f);
         } else {
-            const Float a = 1.0f / (1.0f + omega_3.z);
-            const Float b = -omega_3.x * omega_3.y * a;
-            omega_1 = Vector(1.0f - omega_3.x * omega_3.x * a, b, -omega_3.x);
-            omega_2 = Vector(b, 1.0f - omega_3.y * omega_3.y * a, -omega_3.y);
+            const Float a = 1.0f / (1.0f + wi.z);
+            const Float b = -wi.x * wi.y * a;
+            wk            = Vector(1.0f - wi.x * wi.x * a, b, -wi.x);
+            wj            = Vector(b, 1.0f - wi.y * wi.y * a, -wi.y);
         }
     }
 
@@ -190,8 +188,9 @@ public:
         return wo;
     }
 
-    Spectrum eval(const PhaseFunctionContext& ctx, const MediumInteraction3f& mi,
-        const Vector3f& wo, Mask active)  const override {
+    Spectrum eval(const PhaseFunctionContext &ctx,
+                  const MediumInteraction3f &mi, const Vector3f &wo,
+                  Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::PhaseFunctionEvaluate, active);
 
         Vector omega3 = mi.t;
@@ -199,25 +198,30 @@ public:
         calc_matrix(Sxx, Syy, Szz, Sxy, Sxz, Syz);
 
         Vector wi = mi.to_local(mi.wi);
-        wo = mi.to_local(wo);
+        wo        = mi.to_local(wo);
         Float ret = eval_specular(wi, wo, Sxxx, Syy, Szz, Sxy, Sxz, Syz);
 
         return ret;
     }
 
-    std::pair<Vector3f, Float> sample(const PhaseFunctionContext& ctx,
-        const MediumInteraction3f& mi, const Point2f& sample, Mask active = true) const override {
+    std::pair<BSDFSample3f, Spectrum>
+    sample(const BSDFContext &ctx, const SurfaceInteraction3f &si,
+           Float sample1, const Point2f &sample2,
+           Mask active = true) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::PhaseFunctionSample, active);
+        Vector omega3 = si.wi;
+        Float Sxx, Sxy, Sxz, Syy, Syz, Szz;
+        calc_matrix(Sxx, Syy, Szz, Sxy, Sxz, Syz);
 
-
+        BSDFSample3f bs = zero<BSDFSample3f>();
+        bs.wo           = warp::square_to_cosine_hemisphere(sample2);
+        bs.pdf          = warp ::square_to_cosine_hemisphere_pdf(bs.wo);
     }
 
 private:
     ref<Texture> m_texture_roughness;
     ref<Texture> m_texture_anisotropic;
-
 };
-
 
 MTS_EXPORT_PLUGIN(SymmetricGGXSpecular, "SGGX")
 NAMESPACE_END(mitsuba)
