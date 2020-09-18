@@ -4,8 +4,6 @@
 #include <mitsuba/core/warp.h>
 
 #include <mitsuba/render/bsdf.h>
-#include <mitsuba/render/medium.h>
-#include <mitsuba/render/phase.h>
 #include <mitsuba/render/sampler.h>
 #include <mitsuba/render/texture.h>
 
@@ -188,14 +186,13 @@ public:
         return wo;
     }
 
-    Spectrum eval(const PhaseFunctionContext &ctx,
-                  const MediumInteraction3f &mi, const Vector3f &wo,
-                  Mask active) const override {
-        MTS_MASKED_FUNCTION(ProfilerPhase::PhaseFunctionEvaluate, active);
+    Spectrum eval(const BSDFContext &ctx, const SurfaceInteraction3f &si,
+                  const Vector3f &wo, Mask active) const override {
+        MTS_MASKED_FUNCTION(ProfilerPhase::BSDFEvaluate, active);
 
-        Vector omega3 = mi.t;
+        Vector omega3 = si.sh_frame.t;
         Float Sxx, Sxy, Sxz, Syy, Syz, Szz;
-        calc_matrix(Sxx, Syy, Szz, Sxy, Sxz, Syz);
+        calc_matrix(Sxx, Syy, Szz, Sxy, Sxz, Syz, m_roughness, omega3);
 
         Vector wi = mi.to_local(mi.wi);
         wo        = mi.to_local(wo);
@@ -208,10 +205,10 @@ public:
     sample(const BSDFContext &ctx, const SurfaceInteraction3f &si,
            Float sample1, const Point2f &sample2,
            Mask active = true) const override {
-        MTS_MASKED_FUNCTION(ProfilerPhase::PhaseFunctionSample, active);
-        Vector omega3 = si.wi;
+        MTS_MASKED_FUNCTION(ProfilerPhase::BSDFSample, active);
+        Vector omega3 = si.sh_frame.t;
         Float Sxx, Sxy, Sxz, Syy, Syz, Szz;
-        calc_matrix(Sxx, Syy, Szz, Sxy, Sxz, Syz);
+        calc_matrix(Sxx, Syy, Szz, Sxy, Sxz, Syz, m_roughness, omega3);
 
         BSDFSample3f bs = zero<BSDFSample3f>();
         bs.wo           = warp::square_to_cosine_hemisphere(sample2);
@@ -219,8 +216,8 @@ public:
     }
 
 private:
-    ref<Texture> m_texture_roughness;
-    ref<Texture> m_texture_anisotropic;
+    ref<Texture> m_roughness;
+    ref<Texture> m_anisotropic;
 };
 
 MTS_EXPORT_PLUGIN(SymmetricGGXSpecular, "SGGX")
