@@ -23,7 +23,7 @@ public:
     }
 
     void calc_matrix(Float &Sxx, Float &Syy, Float Szz, Float &Sxy, Float &Sxz,
-                     Float &Syz, Float roughness, const Vector &omega3) {
+                     Float &Syz, Float roughness, const Vector3f &omega3) {
         Float roughness2 = roughness * roughness;
         Sxx = roughness2 * omega3.x * omega3.x + omega3.y * omega3.y +
               omega3.z * omega3.z;
@@ -36,7 +36,7 @@ public:
         Syz = roughness2 * omega3.y * omega3.z - omega3.y * omega3.z;
     }
 
-    Float sigma(const Vector &wi, Float Sxx, Float Syy, Float Szz, Float Sxy,
+    Float sigma(const Vector3f &wi, Float Sxx, Float Syy, Float Szz, Float Sxy,
                 Float Sxz, Float Syz) {
         const Float sigma_squared =
             wi.x * wi.x * Sxx + wi.y * wi.y * Syy + wi.z * wi.z * Szz +
@@ -44,7 +44,7 @@ public:
         return (sigma_squared > 0.0f) ? sqrtf(sigma_squared) : 0.0f;
     }
 
-    Float D(const Vector &wm, Float S_xx, Float S_yy, Float S_zz, Float S_xy,
+    Float D(const Vector3f &wm, Float S_xx, Float S_yy, Float S_zz, Float S_xy,
             Float S_xz, Float S_yz) {
         const Float detS = S_xx * S_yy * S_zz - S_xx * S_yz * S_yz -
                            S_yy * S_xz * S_xz - S_zz * S_xy * S_xy +
@@ -59,7 +59,7 @@ public:
         return D;
     }
 
-    void buildOrthonormalBasis(Vector &wk, Vector &wj, const Vector &wi) {
+    void buildOrthonormalBasis(Vector3f &wk, Vector3f &wj, const Vector3f &wi) {
         if (wi.z < -0.9999999f) {
             wk = Vector(0.0f, -1.0f, 0.0f);
             wj = Vector(-1.0f, 0.0f, 0.0f);
@@ -71,7 +71,7 @@ public:
         }
     }
 
-    Vector sample_VNDF(const Vector &wi, Float S_xx, Float S_yy, Float S_zz,
+    Vector3f sample_VNDF(const Vector3f &wi, Float S_xx, Float S_yy, Float S_zz,
                        Float S_xy, Float S_xz, Float S_yz, Float U1, Float U2) {
         // generate sample (u, v, w)
         const Float r   = sqrtf(U1);
@@ -127,7 +127,7 @@ public:
         return wm_kji.x * wk + wm_kji.y * wj + wm_kji.z * wi;
     }
 
-    Float eval_specular(const Vector &wi, const Vector &wo, Float S_xx,
+    Float eval_specular(const Vector3f &wi, const Vector3f &wo, Float S_xx,
                         Float S_yy, Float S_zz, Float S_xy, Float S_xz,
                         Float S_yz) {
         Vector wh = normalize(wi + wo);
@@ -135,7 +135,7 @@ public:
                sigma(wi, S_xx, S_yy, S_zz, S_xy, S_xz, S_yz);
     }
 
-    Vector sample_specular(const Vector &wi, Float S_xx, Float S_yy, Float S_zz,
+    Vector3f sample_specular(const Vector3f &wi, Float S_xx, Float S_yy, Float S_zz,
                            Float S_xy, Float S_xz, Float S_yz, Float U1,
                            Float U2) {
         // sample VNDF
@@ -143,46 +143,6 @@ public:
             sample_VNDF(wi, S_xx, S_yy, S_zz, S_xy, S_xz, S_yz, U1, U2);
         // specular reflection
         const Vector wo = -wi + 2.0f * wm * dot(wm, wi);
-        return wo;
-    }
-
-    Float eval_diffuse(const Vector &wi, const Vector &wo, Float S_xx,
-                       Float S_yy, Float S_zz, Float S_xy, Float S_xz,
-                       Float S_yz, Float U1, Float U2) {
-        // sample VNDF
-        const Vector wm =
-            sample_VNDF(wi, S_xx, S_yy, S_zz, S_xy, S_xz, S_yz, U1, U2);
-        // eval diffuse
-        return 1.0f / M_PI * fmaxf(0.0f, dot(wo, wm));
-    }
-
-    Vector sample_diffuse(const Vector &wi, Float S_xx, Float S_yy, Float S_zz,
-                          Float S_xy, Float S_xz, Float S_yz, Float U1,
-                          Float U2, Float U3, Float U4) {
-        // sample VNDF
-        const Vector wm =
-            sample_VNDF(wi, S_xx, S_yy, S_zz, S_xy, S_xz, S_yz, U1, U2);
-        // sample diffuse reflection
-        Vector w1, w2;
-        buildOrthonormalBasis(w1, w2, wm);
-        Float r1 = 2.0f * U3 - 1.0f;
-        Float r2 = 2.0f * U4 - 1.0f;
-        // concentric map code from
-        // http://psgraphics.blogspot.ch/2011/01/improved-code-for-concentric-map.html
-        Float phi, r;
-        if (r1 == 0 && r2 == 0) {
-            r = phi = 0;
-        } else if (r1 * r1 > r2 * r2) {
-            r   = r1;
-            phi = (M_PI / 4.0f) * (r2 / r1);
-        } else {
-            r   = r2;
-            phi = (M_PI / 2.0f) - (r1 / r2) * (M_PI / 4.0f);
-        }
-        Float x   = r * cosf(phi);
-        Float y   = r * sinf(phi);
-        Float z   = sqrtf(1.0f - x * x - y * y);
-        Vector wo = x * w1 + y * w2 + z * wm;
         return wo;
     }
 
@@ -194,31 +154,37 @@ public:
         Float Sxx, Sxy, Sxz, Syy, Syz, Szz;
         calc_matrix(Sxx, Syy, Szz, Sxy, Sxz, Syz, m_roughness, omega3);
 
-        Vector wi = mi.to_local(mi.wi);
-        wo        = mi.to_local(wo);
-        Float ret = eval_specular(wi, wo, Sxxx, Syy, Szz, Sxy, Sxz, Syz);
+        Float cos_theta_i = Frame3f::cos_theta(si.wi),
+              cos_theta_o = Frame3f::cos_theta(wo);
 
-        return ret;
+
+        active &= cos_theta_i > 0.f && cos_theta_o > 0.f;
+
+        UnpolarizedSpectrum value =
+            m_roughness->eval(si, active) *
+            eval_specular(si.wi, wo, Sxx, Syy, Szz, Sxy, Sxz, Syz);
+
+        return select(active, unpolarized<Spectrum>(value), 0.f);
     }
 
-    std::pair<BSDFSample3f, Spectrum>
-    sample(const BSDFContext &ctx, const SurfaceInteraction3f &si,
-           Float sample1, const Point2f &sample2,
-           Mask active = true) const override {
-        MTS_MASKED_FUNCTION(ProfilerPhase::BSDFSample, active);
-        Vector omega3 = si.sh_frame.t;
-        Float Sxx, Sxy, Sxz, Syy, Syz, Szz;
-        calc_matrix(Sxx, Syy, Szz, Sxy, Sxz, Syz, m_roughness, omega3);
 
-        BSDFSample3f bs = zero<BSDFSample3f>();
-        bs.wo           = warp::square_to_cosine_hemisphere(sample2);
-        bs.pdf          = warp ::square_to_cosine_hemisphere_pdf(bs.wo);
+    void traverse(TraversalCallback *callback) override {
+        callback->put_object("roughness", m_roughness.get());
     }
 
+    std::string to_string() const override {
+        std::ostringstream oss;
+        oss << "SymmetricGGXSpecular[" << std::endl
+            << "   roughness = " << m_roughness << std::endl
+            << "]";
+        return oss.str();
+    }
+
+    MTS_DECLARE_CLASS()
 private:
     ref<Texture> m_roughness;
-    ref<Texture> m_anisotropic;
 };
 
+MTS_IMPLEMENT_CLASS_VARIANT(SymmetricGGXSpecular, BSDF)
 MTS_EXPORT_PLUGIN(SymmetricGGXSpecular, "SGGX")
 NAMESPACE_END(mitsuba)
