@@ -22,8 +22,8 @@ public:
         m_components.push_back(m_flags);
     }
 
-    void calc_matrix(Float &Sxx, Float &Syy, Float Szz, Float &Sxy, Float &Sxz,
-                     Float &Syz, Float roughness, Vector3f &omega3) {
+    void calc_matrix(Float &Sxx, Float &Syy, Float &Szz, Float &Sxy, Float &Sxz,
+                     Float &Syz, Float roughness, Vector3f &omega3) const {
         Float roughness2 = roughness * roughness;
         Sxx = roughness2 * omega3.x * omega3.x + omega3.y * omega3.y +
               omega3.z * omega3.z;
@@ -37,7 +37,7 @@ public:
     }
 
     Float sigma(const Vector3f &wi, Float Sxx, Float Syy, Float Szz, Float Sxy,
-                Float Sxz, Float Syz) {
+                Float Sxz, Float Syz) const {
         const Float sigma_squared =
             wi.x * wi.x * Sxx + wi.y * wi.y * Syy + wi.z * wi.z * Szz +
             2.0f * (wi.x * wi.y * Sxy + wi.x * wi.z * Sxz + wi.y * wi.z * Syz);
@@ -45,7 +45,7 @@ public:
     }
 
     Float D(const Vector3f &wm, Float S_xx, Float S_yy, Float S_zz, Float S_xy,
-            Float S_xz, Float S_yz) {
+            Float S_xz, Float S_yz) const {
         const Float detS = S_xx * S_yy * S_zz - S_xx * S_yz * S_yz -
                            S_yy * S_xz * S_xz - S_zz * S_xy * S_xy +
                            2.0f * S_xy * S_xz * S_yz;
@@ -59,7 +59,8 @@ public:
         return D;
     }
 
-    void buildOrthonormalBasis(Vector3f &wk, Vector3f &wj, const Vector3f &wi) {
+    void buildOrthonormalBasis(Vector3f &wk, Vector3f &wj,
+                               const Vector3f &wi) const {
         if (wi.z < -0.9999999f) {
             wk = Vector(0.0f, -1.0f, 0.0f);
             wj = Vector(-1.0f, 0.0f, 0.0f);
@@ -72,7 +73,8 @@ public:
     }
 
     Vector3f sample_VNDF(const Vector3f &wi, Float S_xx, Float S_yy, Float S_zz,
-                       Float S_xy, Float S_xz, Float S_yz, Float U1, Float U2) {
+                         Float S_xy, Float S_xz, Float S_yz, Float U1,
+                         Float U2) {
         // generate sample (u, v, w)
         const Float r   = sqrtf(U1);
         const Float phi = 2.0f * M_PI * U2;
@@ -127,17 +129,16 @@ public:
         return wm_kji.x * wk + wm_kji.y * wj + wm_kji.z * wi;
     }
 
-    Float eval_specular(Vector3f &wi, Vector3f &wo, Float S_xx,
-                        Float S_yy, Float S_zz, Float S_xy, Float S_xz,
-                        Float S_yz) {
+    Float eval_specular(Vector3f &wi, Vector3f &wo, Float S_xx, Float S_yy,
+                        Float S_zz, Float S_xy, Float S_xz, Float S_yz) const {
         Vector wh = normalize(wi + wo);
         return 0.25f * D(wh, S_xx, S_yy, S_zz, S_xy, S_xz, S_yz) /
                sigma(wi, S_xx, S_yy, S_zz, S_xy, S_xz, S_yz);
     }
 
-    Vector3f sample_specular(const Vector3f &wi, Float S_xx, Float S_yy, Float S_zz,
-                           Float S_xy, Float S_xz, Float S_yz, Float U1,
-                           Float U2) {
+    Vector3f sample_specular(const Vector3f &wi, Float S_xx, Float S_yy,
+                             Float S_zz, Float S_xy, Float S_xz, Float S_yz,
+                             Float U1, Float U2) {
         // sample VNDF
         const Vector wm =
             sample_VNDF(wi, S_xx, S_yy, S_zz, S_xy, S_xz, S_yz, U1, U2);
@@ -150,13 +151,12 @@ public:
                   const Vector3f &wo, Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::BSDFEvaluate, active);
 
-        Vector omega3 = si.sh_frame.t;
+        Vector3f omega3 = si.sh_frame.t;
         Float Sxx, Sxy, Sxz, Syy, Syz, Szz;
         calc_matrix(Sxx, Syy, Szz, Sxy, Sxz, Syz, m_roughness, omega3);
 
         Float cos_theta_i = Frame3f::cos_theta(si.wi),
               cos_theta_o = Frame3f::cos_theta(wo);
-
 
         active &= cos_theta_i > 0.f && cos_theta_o > 0.f;
 
@@ -166,7 +166,6 @@ public:
 
         return select(active, unpolarized<Spectrum>(value), 0.f);
     }
-
 
     void traverse(TraversalCallback *callback) override {
         callback->put_object("roughness", m_roughness.get());
