@@ -23,7 +23,7 @@ public:
     }
 
     void calc_matrix(Float &Sxx, Float &Syy, Float Szz, Float &Sxy, Float &Sxz,
-                     Float &Syz, Float roughness, const Vector3f &omega3) {
+                     Float &Syz, Float roughness, Vector3f &omega3) {
         Float roughness2 = roughness * roughness;
         Sxx = roughness2 * omega3.x * omega3.x + omega3.y * omega3.y +
               omega3.z * omega3.z;
@@ -127,7 +127,7 @@ public:
         return wm_kji.x * wk + wm_kji.y * wj + wm_kji.z * wi;
     }
 
-    Float eval_specular(const Vector3f &wi, const Vector3f &wo, Float S_xx,
+    Float eval_specular(Vector3f &wi, Vector3f &wo, Float S_xx,
                         Float S_yy, Float S_zz, Float S_xy, Float S_xz,
                         Float S_yz) {
         Vector wh = normalize(wi + wo);
