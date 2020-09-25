@@ -15,10 +15,10 @@ public:
     MTS_IMPORT_BASE(BSDF, m_flags, m_components)
     MTS_IMPORT_RENDER_BASIC_TYPES()
     MTS_IMPORT_TYPES(Texture)
-    
+
     SymmetricGGXSpecular(const Properties &props) : Base(props) {
-        m_roughness   = props.texture<Texture>("roughness", 0.5f);
-        m_flags       = BSDFFlags::Anisotropic | BSDFFlags::FrontSide;
+        m_roughness = props.texture<Texture>("roughness", 0.5f);
+        m_flags     = BSDFFlags::Anisotropic | BSDFFlags::FrontSide;
         m_components.push_back(m_flags);
     }
 
@@ -40,12 +40,13 @@ public:
                 Float Sxz, Float Syz) const {
         const Float sigma_squared =
             wi[0] * wi[0] * Sxx + wi[1] * wi[1] * Syy + wi[2] * wi[2] * Szz +
-            2.0f * (wi[0] * wi[1] * Sxy + wi[0] * wi[2] * Sxz + wi[1] * wi[2] * Syz);
+            2.0f * (wi[0] * wi[1] * Sxy + wi[0] * wi[2] * Sxz +
+                    wi[1] * wi[2] * Syz);
         return (sigma_squared > 0.0f) ? sqrtf(sigma_squared) : 0.0f;
     }
 
     Float D(const Vector3f &wm, Float S_xx, Float S_yy, Float S_zz, Float S_xy,
-            Float S_xz, Float S_yz) const{
+            Float S_xz, Float S_yz) const {
         const Float detS = S_xx * S_yy * S_zz - S_xx * S_yz * S_yz -
                            S_yy * S_xz * S_xz - S_zz * S_xy * S_xy +
                            2.0f * S_xy * S_xz * S_yz;
@@ -59,12 +60,38 @@ public:
         return D;
     }
 
-
-    Float eval_specular(const Vector3f &wi, const Vector3f &wo, Float S_xx, Float S_yy,
-                        Float S_zz, Float S_xy, Float S_xz, Float S_yz) const {
+    Float eval_specular(const Vector3f &wi, const Vector3f &wo, Float S_xx,
+                        Float S_yy, Float S_zz, Float S_xy, Float S_xz,
+                        Float S_yz) const {
         Vector wh = normalize(wi + wo);
         return 0.25f * D(wh, S_xx, S_yy, S_zz, S_xy, S_xz, S_yz) /
                sigma(wi, S_xx, S_yy, S_zz, S_xy, S_xz, S_yz);
+    }
+
+    std::pair<BSDFSample3f, Spectrum>
+    sample(const BSDFContext &ctx, const SurfaceInteraction3f &si,
+           Float sample1, const Point2f &sample2,
+           Mask active = true) const override {
+        MTS_MASKED_FUNCTION(ProfilerPhase::BSDFSample, active);
+
+        Float cos_theta_i = Frame3f::cos_theta(si.wi);
+        BSDFSample3f bs   = zero<BSDFSample3f>();
+
+        active &= cos_theta_i > 0.f;
+        if (unlikely(none_or<false>(active) ||
+                     !ctx.is_enabled(BSDFFlags::DiffuseReflection)))
+            return { bs, 0.f };
+
+        bs.wo                = warp::square_to_cosine_hemisphere(sample2);
+        bs.pdf               = warp::square_to_cosine_hemisphere_pdf(bs.wo);
+        bs.eta               = 1.f;
+        bs.sampled_type      = +BSDFFlags::DiffuseReflection;
+        bs.sampled_component = 0;
+
+        UnpolarizedSpectrum value = m_roughness->eval(si, active);
+
+        return { bs, select(active && bs.pdf > 0.f,
+                            unpolarized<Spectrum>(value), 0.f) };        
     }
 
     Spectrum eval(const BSDFContext &ctx, const SurfaceInteraction3f &si,
@@ -90,6 +117,20 @@ public:
         return select(active, unpolarized<Spectrum>(value), 0.f);
     }
 
+    Float pdf(const BSDFContext &ctx, const SurfaceInteraction3f &si,
+              const Vector3f &wo, Mask active) const override {
+        MTS_MASKED_FUNCTION(ProfilerPhase::BSDFEvaluate, active);
+
+        if (!ctx.is_enabled(BSDFFlags::Anisotropic))
+            return 0.f;
+        Float cos_theta_i = Frame3f::cos_theta(si.wi),
+              cos_theta_o = Frame3f::cos_theta(wo);
+
+        Float pdf = warp::square_to_cosine_hemisphere_pdf(wo);
+
+        return select(cos_theta_i > 0.f && cos_theta_o > 0.f, pdf, 0.f);
+    }
+
     void traverse(TraversalCallback *callback) override {
         callback->put_object("roughness", m_roughness.get());
     }
@@ -97,7 +138,7 @@ public:
     std::string to_string() const override {
         std::ostringstream oss;
         oss << "SymmetricGGXSpecular[" << std::endl
-            << "   roughness = " << m_roughness << std::endl
+            << "   roughness = " << string::indent(m_roughness) << std::endl
             << "]";
         return oss.str();
     }
